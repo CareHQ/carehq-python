@@ -1,10 +1,11 @@
 import hashlib
+import hmac
 import json
 import io
+import secrets
 import time
 
 import requests
-from werkzeug.datastructures import MultiDict
 
 from . import exceptions
 
@@ -91,36 +92,26 @@ class APIClient:
             }
 
         # Build the signature
-        signature_data = MultiDict(params if method.lower() == 'get' else data)\
-            .to_dict(False)
-
-        signature_values = []
-        for key, value in signature_data.items():
-            signature_values.append(key)
-            if isinstance(value, list):
-                signature_values += value
-            else:
-                signature_values.append(value)
-        signature_body = ''.join(signature_values)
-
-        timestamp = str(time.time())
-        signature = hashlib.sha1()
-        signature.update(
-            ''.join([
-                timestamp,
-                signature_body,
-                self._api_secret
-            ]).encode('utf8')
-        )
-        signature = signature.hexdigest()
+        timestamp_str = str(int(time.time()))
+        nonce = secrets.token_urlsafe(16)
+        string_to_sign = '\n'.join([
+            timestamp_str,
+            nonce,
+            method.upper(),
+            f'/v1/{path}',
+            _canonical_params_str(params if method.upper() == 'GET' else data)
+        ]).encode('utf-8')
+        signature = _compute_signature(self._api_secret, string_to_sign)
 
         # Build headers
         headers = {
             'Accept': 'application/json',
             'X-CareHQ-AccountId': self._account_id,
             'X-CareHQ-APIKey': self._api_key,
+            'X-CareHQ-Nonce': nonce,
             'X-CareHQ-Signature': signature,
-            'X-CareHQ-Timestamp': timestamp
+            'X-CareHQ-Signature-Version': '2.0',
+            'X-CareHQ-Timestamp': timestamp_str
         }
 
         # Make the request
@@ -164,13 +155,38 @@ class APIClient:
 
 # Utils
 
+def _canonical_params_str(params):
+    """Return a canonical string representing the given params (dictionary)"""
+
+    parts = []
+    for key in sorted(params.keys()):
+
+        values = params[key]
+
+        if not isinstance(values, (list, tuple, set)):
+            values = [values]
+
+        for value in sorted(values):
+            parts.append(f'{key}={value}')
+
+    return '\n'.join(parts)
+
+def _compute_signature(secret, msg):
+    """Compute a signature for a string"""
+    mac = hmac.new(
+        key=secret.encode('utf-8'),
+        msg=msg,
+        digestmod=hashlib.sha256
+    )
+    return mac.hexdigest()
+
 def _ensure_string(v):
     """
-    Ensure values that will be convered to a form-encoded value is a string
+    Ensure values that will be converted to form-encoded values are a string
     (or list of strings).
     """
 
-    if isinstance(v, (list, tuple)):
-        return list([str(i) for i in v])
+    if isinstance(v, (list, tuple, set)):
+        return [str(i) for i in v]
 
     return str(v)

@@ -158,6 +158,9 @@ class APIClient:
 def _canonical_params_str(params):
     """Return a canonical string representing the given params (dictionary)"""
 
+    if not params:
+        params = {}
+
     parts = []
     for key in sorted(params.keys()):
 

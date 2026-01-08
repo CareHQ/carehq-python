@@ -35,7 +35,7 @@ class APIClient:
         self._api_secret = api_secret
 
         # The base URL to use when calling the API
-        self._api_base_url = api_base_url
+        self._api_base_url = api_base_url.rstrip('/')
 
         # The period of time before requests to the API should timeout
         self._timeout = timeout
@@ -54,6 +54,7 @@ class APIClient:
         # The number of requests remaining within the current limit before the
         # next reset.
         self._rate_limit_remaining = None
+
 
     @property
     def rate_limit(self):
@@ -92,6 +93,7 @@ class APIClient:
             }
 
         # Build the signature
+        path = path.strip('/')
         timestamp_str = str(int(time.time()))
         nonce = secrets.token_urlsafe(16)
         string_to_sign = '\n'.join([
